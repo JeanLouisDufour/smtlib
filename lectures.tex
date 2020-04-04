@@ -1,0 +1,488 @@
+\documentclass[a4paper]{article}
+
+\bibliographystyle{plainurl}
+\title{Computational Complexity and Statistical Physics}
+\author{Jean-Louis Dufour}
+
+\usepackage{graphicx}
+\graphicspath{{./lectures_img/}}
+\usepackage{hyperref}
+%\usepackage{natbib}
+%\usepackage{tikz}
+
+\begin{document}
+
+%\nocite{*}
+\maketitle
+
+\begin{abstract}
+History of the links between Computational Complexity and Statistical Physics
+\end{abstract}
+
+\section{Introduction} \label{section:Introduction}
+
+\paragraph*{Prehistory}
+
+The first to link neurophysiology and logic are \cite{mcculloch1943logical}
+
+\begin{figure}[h]
+  \centering
+  \begin{minipage}[b]{0.55\textwidth}
+    \includegraphics[width=\textwidth]{McCulloch.png}
+    \caption{Warren McCulloch}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[b]{0.4\textwidth}
+    \includegraphics[width=\textwidth]{Pitts.png}
+    \caption{Walter Pitts}
+  \end{minipage}
+\end{figure}
+
+bla
+
+\begin{figure}[h]
+\includegraphics[width=1\textwidth]{43_mcculloch_pitts_0.png}
+\caption{Warren McCulloch}
+\end{figure}
+
+bla
+
+\begin{figure}[h]
+\includegraphics[width=1\textwidth]{43_mcculloch_pitts_1.png}
+\caption{Warren McCulloch}
+\end{figure}
+
+\begin{figure}[h]
+\includegraphics[width=1\textwidth]{43_mcculloch_pitts_2.png}
+\caption{Warren McCulloch}
+\end{figure}
+
+Real-time scheduling is more complex on a multi-core processor than on a single-core processor, from two points of view:
+\begin{description}
+\item[Task duration]
+estimation (WCET) is more complex, because of the interference between the cores on the shared bus,
+\item[Task ordering]
+is more complex, because of the combinatorial explosion of the number of possibilities.
+\end{description}
+These two points of view are not orthogonal: ordering impacts interference.
+But in an industrial context, to keep things manageable we have no other choice (given the State of the Art \cite{DBLP:journals/csur/MaizaRRGAD19})
+than to have WCETs overestimated enough to be compatible with any ordering.
+In this paper we will suppose that WCETs have been safely estimated elsewhere,
+and \textbf{we focus only on ordering}.
+In the same way, when we speak of inter-task communications, we are only interested in the induced precedence constraints
+and not in the induced CPU time.
+
+Warning: we must precise that we address here only safety-critical systems (typically DAL A for avionics),
+so our scheduling policy will look (and must be) completely trivial
+compared to the scheduling policies usually dealt with: Rate-Monotonic (RM) task ordering, harmonic periods and completely static (deterministic and offline determined)
+inter-task communications (no semaphore, no lock, no transactional memory).
+
+\paragraph*{Multi-core is more complex than single-core. Why ?}
+
+Having several cores is the root cause, but is not the explanation.
+
+In the single-core case, task ordering has never been a subject (at least for us).
+The RM policy on an harmonic set of periods is a first filter on the set of acceptable orderings.
+Then come the data-flow precedence contraints, and the remaining orderings are not that numerous.
+Even on our most complex applications (18 tasks on 4 periods, roughly 1ms/10ms/100ms/1s), engineering judgment does the job.
+
+The multi-core case is a different story, and this is visible as soon as you begin to work on it, more precisely as soon as the following phenomenon is understood:
+\textbf{a parallel execution of RM schedules is not necessarily RM},
+because slow tasks can start before fast tasks have finished.
+This sentence relies on a specific definition of `RM' in the multi-core context, it will be precised in the multi-core section.
+Anyway, the solution is easy: these slow tasks must be delayed by offsets.
+But these new offsets (we don't need them in single-core schedules) add new dimensions to the problem,
+and engineering judgement no more does the job.
+
+\paragraph*{The way to an unexpected solution.}
+
+Publications accumulate on the successes of SMT-solvers on more and more impressive Constraint Satisfaction Problems (CSP),
+and it is confirmed internally on two `real-life' use-cases (FPGA verification and software test generation).
+So, we have decided to automate the inference of priorities, affinities (associations cores-tasks) and offsets.
+This automatisation begins with the formalization of the problem to solve, and especially two things:
+\begin{itemize}
+\item what is a data-flow precedence constraint ?
+\item what is a multi-core rate-monotonic task schedule ?
+\end{itemize}
+This being done, the question `is there a task schedule satisifying the precedence constraints ?' can itself be formalized as a CSP (expressed in the SMTLIB language),
+and we have written a prototype tool to generate this CSP.
+
+The first lesson learned is that this CSP is complex (several hundred definitions and assertions for simple configurations), the generator is also a bit complex,
+the CSP generated is sometimes buggy and it is not obvious at all to see when and why.
+In an industrial context this is a real problem (not to mention the certification aspects), and to address it we went through the following successive stages:
+\begin{enumerate}
+\item
+Debugging and verification mandate to develop also a simulator, that is to say a faithful model of the scheduler.
+\item
+The next idea is, instead of waiting passively for the bug, to tackle the problem at its source and to rearrange the CSP generator so that it mimics the simulator.
+Engineers talk about `correct by construction'.
+A more informed way of seeing this is to say that the CSP generator is an abstract interpretation of the simulator:
+\begin{itemize}
+\item the simulator emits commutation decisions and communication decisions,
+\item the CSP generator emits the definitions and assertions corresponding strictly to these decisions.
+\end{itemize}
+\item
+The second last idea is to stop spending all our time fixing the generator, but instead to directly model-check the simulator (of course slightly adapted for this purpose).
+The problem is that we have used a standard scripting language (Python), and to our knowledge, there is no model-checker on it.
+\item
+It turns out that for application development, we use a language which comes with its model-checker: Scade (the commercial version of Lustre).
+The last idea is to realize that Scade is expressive enough to implement the simulator.
+\end{enumerate}
+In fact, Scade capabilities in terms of array polymorphism and iterators have been decisive in order to write a simple and therefore analyzable model.
+
+Each of these 4 steps taken separately is basic engineering. Taken together, they bring significant added value.
+On the other hand, we don't claim that this approach scales well on more sophisticated scheduling policies.
+Schedulers have already been model-checked \cite{DBLP:journals/stvr/Choi14}, but with a standard verification goal.
+To our knowledge it is the first time that
+\begin{enumerate}
+\item a (model of a) scheduler is model-checked to obtain its configuration,
+\item Scade (acronym for ``Safety-Critical \emph{Application} Development Environment'') is used for such a purpose.
+\end{enumerate}
+
+\paragraph*{Today's menu.}
+
+The first section recalls the relevant aspects of our single-core policy: it was already done in \cite{destelle:hal-02267646},
+we add several examples of independent but similar developments.
+
+The second section describes our extension to the multi-core case.
+
+The third section describes the Scade model and arguments its fidelity to the real scheduler.
+
+The last section describes a few results obtained.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{The single-core case} \label{section:single-core}
+
+\paragraph*{A not-so-well-known communication policy.}
+
+As explained in \cite{destelle:hal-02267646}, we have traditionally used for our Inertial Navigation Systems a very simple single-core
+multi-tasking architecture: a purely periodic preemptive scheduling (no aperiodic task: asynchronous
+events are polled, with hardware time-tagging of events when needed), with a Fixed-Priority Rate-Monotonic policy.
+Among the ‘standard’ portfolio of scheduling policies, we have selected 3 options:
+\begin{description}
+\item[Harmonic period set:]
+for each pair of periods $T_i, T_j$, either $T_i$ divides $T_j$ or vice-versa. It
+implies for example that the hyper-period is the longest period, and more generally, many of the
+properties/bounds become simpler. Typically, the scheduling condition becomes
+$\Sigma_i \frac{C_i}{T_i} \leq 1$
+($C_i$ is the WCET of task $i$; this sum and each of its terms are called a ‘utilization factor’ or a ‘CPU load’),
+so RM scheduling becomes an optimal policy. This is the ‘temporal’ point of view, but there is also a
+‘frequential’ point of view: there are \textbf{no beats}, which simplifies greatly the functional understanding
+and minimizes the number of configurations to be covered in functional test or in WCET estimation.
+\item[ No ‘offset’:]
+for example, at each hyper-period, all the tasks become simultaneously eligible
+(and, thanks to rate-monotonicity, one having the base period is elected).
+It is well known that in such ‘congestion’ situations, offsets can be very useful:
+\cite{grenier:insu-02270103} gives an amazing illustration on the CAN bus,
+and closer to us, if you have recently bought a ticket for the Louvre museum, you know that you have to respect the access hour mentioned.
+But despite all that, in our single-core context offsets are totally useless.
+\item[Constant execution time:]
+tasks end with an endless loop, which is itself interrupted by the scheduler at the WCET.
+We call this ‘deterministic’ scheduling, because the
+number of preemptions of a task become fixed and known (offline). This is very useful when the
+cache-related preemption costs (the write-backs) become significant; it was the subject of \cite{destelle:hal-02267646}.
+\end{description}
+
+A non-standard feature is ‘synchronous’ communication between tasks, which
+avoids semaphores, priority inversion and all that stuff. We call it ‘synchronous’ because it has a natural model
+with conditional activation in Scade \cite{camus:insu-02270095} and ‘rate transition’ blocks in Simulink \cite{DBLP:conf/rtss/MaticH05}.
+The principle is incredibly simple:
+
+\textbf{a fast task communicates with a slow task (simply by reading/writing a shared area) 
+only during its first execution in the slow task period.}
+
+The RM property applied on an harmonic period set is a sufficient condition (on a sequential execution) to guarantee that during communication,
+the fast task will not be preempting the slow one.
+The following figure illustrates this with a fast orange task `T1' and a (3 times) slower blue task `T2' (which is preempted one time).
+The slow task communicates (reads and writes the shared area) systematically.
+On the other hand, the fast task communicates only when authorized by the predicate `First(T2)',
+which is True only during the first execution of T1 in the slow period of T2.
+Observe that the 3rd execution of T1 doesn't preempt T2 (and we know this statically), but it doesn't communicate: it still uses 'old' T2 outputs.
+The first T1 execution to benefit from `fresh' T2 outputs will be the 4th execution. 
+This is a `max-latency' behavior, as opposed to `best-effort'.
+%\begin{tikzpicture}
+%\draw (0,0) rectangle +(2,1) (1,0.5 ) node {Fast 1};
+%\draw (3,0) rectangle +(2,1) ++(1,0.5 ) node {Fast 2};
+%\end{tikzpicture}
+%\begin{figure}[h]
+%\includegraphics[width=1\textwidth]{DMS1}
+%\caption{Predefined communication times}
+%\end{figure}
+
+\paragraph*{Similar communication policies still exist.}
+
+This principle (or the more general concept of
+deterministic communication) is seldom developed in the literature: usually tasks don’t explicitly communicate, they are
+ independent, but sometimes their model incorporates ‘blocking times’
+corresponding to accesses to shared resources \cite{DBLP:journals/csur/DavisB11}.
+We have identified three exceptions (no exhaustiveness claim) which emphasize our very same notion of deterministic/logical communication:
+\begin{enumerate}
+\item
+the LET (Logical Execution Time) time model of the Giotto language \cite{DBLP:conf/birthday/KirschS12},
+which is more general, because it just mandates that the period of a
+‘communicator’ divides the periods of its readers/writers.
+\item
+deterministic communication is also achieved
+in a still more general setting (with deterministic queueing) by the OASIS scheduler of CEA \cite{DBLP:conf/pdcs/ChabrolDALD05} and its
+commercial successor ASTERIOS of Krono-Safe %\cite{krono-safe}.
+\item
+\cite{DBLP:journals/lites/CarlePSL15} uses a DAG task model in an ARINC
+653 – like architecture with references to Giotto.
+\end{enumerate}
+In the four cases (‘synchronous’, LET,
+OASIS and ‘ARINC653-like’), the inter-task data-flow is a key input.
+Last but not least, deterministic communication permits to have identical functional
+behavior between simulation on host (without preemptions) and execution on target (with preemptions).
+This point is crucial and has to stay in a multi-core extension.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{The multi-core case} \label{section:multi-core}
+
+\paragraph*{What is a multi-core rate-monotonic task schedule ?}
+
+In the introduction, we said that
+\textbf{a parallel execution of RM schedules is not necessarily RM},
+because slow tasks can start before fast tasks have finished.
+In fact it's a fuzzy statement, because the concept of `RM' is not standardized in the multi-core case.
+
+In the single-core case, it is crystal-clear since the seminal paper of Liu and Layland \cite{DBLP:journals/jacm/LiuL73}.
+They define three imbricated concepts:
+\emph{priority driven} scheduling, then \emph{fixed (or static) priority} scheduling, and finally \emph{rate-monotonic} scheduling.
+A \emph{rate-monotonic priority assignment} is such that
+\begin{quote}
+``tasks with higher request rates will have higher priorities'' (sic)
+\end{quote}
+A consequence in the harmonic case is that
+\begin{quote}
+tasks with higher request rates will run before tasks with lower request rates.
+\end{quote}
+(a rigourous statement would first define the meaning of `run before' between tasks of different periodicity).
+In an engineering context, there is often a confusion between these two statements,
+and it is not a problem as long as the application is single-core.
+In fact, this confusion is very natural and convenient because it allows the engineer not to have to specify
+the temporal characteristics of the data-flows between the two tasks: they are imposed by the scheduling.
+
+In the multi-core case, the concept of `RM schedule' has no universally accepted definition.
+We will assume that a multi-core schedule is simply a parallel execution of single-core schedules.
+This assumption is not only technically reasonable, it opens the way to the reuse of already validated and certified single-core schedulers.
+Now the question is: are the tasks independent ?
+Let's illustrate this by adapting the example given in figure~1 on a 2-core processor, T1 on core 1 and T2 on core 2.
+\begin{description}
+\item[The first extreme interpretation]
+of `multi-core RM', the fully independent case, gives the following schedule:
+
+
+
+
+
+From a CPU time point of view, it is the most interesting option, but we must recognize that in practice, it is unrealistic,
+because in applications, tasks communicate.
+\item[The other extreme interpretation]
+of `multi-core RM', the fully dependent case (systematic application of the principle `fast runs before slow'), gives:
+%\begin{figure}[h]
+%\includegraphics[width=1\textwidth]{Pitts.png}
+%\caption{Walter Pitts}
+%\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \begin{minipage}[b]{0.45\textwidth}
+    \includegraphics[width=\textwidth]{Solomonoff.png}
+    \caption{Solomonoff}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[b]{0.45\textwidth}
+    \includegraphics[width=\textwidth]{Rapoport.png}
+    \caption{Rapoport}
+  \end{minipage}
+\end{figure}
+
+bla
+
+\begin{figure}[h]
+  \centering
+  \begin{minipage}[b]{0.45\textwidth}
+    \includegraphics[width=\textwidth]{Erdos.png}
+    \caption{Erdos}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[b]{0.45\textwidth}
+    \includegraphics[width=\textwidth]{Renyi.png}
+    \caption{Renyi}
+  \end{minipage}
+ \hfill
+  \begin{minipage}[b]{0.45\textwidth}
+    \includegraphics[width=\textwidth]{Gilbert.png}
+    \caption{Gilbert}
+  \end{minipage}
+\end{figure}
+
+
+
+
+and the gain is of course less interesting.
+But at least, this example shows clearly that T2 has to be delayed by an offset (in this case, equal to T1 duration).
+In practice, either the schedulers have this capability, or you add fake tasks to simulate offsets.
+\item[Our interpretation]
+We have chosen the following intermediate principle:
+\begin{quote}
+bla
+\end{quote}
+ \end{description}
+
+The only point to emphasize is that now,
+tasks must have offsets: 
+
+The solution quickly proposed, delaying the concerned slow tasks, is not optimal:
+it can be the case that a slow task overlapping with a fast task, doesn't in fact communicate with this fast task.
+It this case, there is absolutely no reason to delay it.
+
+
+
+
+\paragraph*{What is a data-flow precedence constraint ?}
+
+The first claim of the paper is that, if you are able to run your single-core schedulers on the multi-core platform
+in a strictly synchronous way (ideally, there share the same real-time tick), with harmonic periods, a multi-core
+schedule is simply a parallel combination of single-core schedules.  The
+interest appears when certification is needed, because to your usual certification process, you just have to add the
+proof that the parallel combination gives the intended behavior (again, this covers only the ordering aspect).
+
+
+
+
+
+To be complete, in fact models of communication (beyond the ‘blocking time’) have also appeared to study realtime
+scheduling on GPUs \cite{DBLP:conf/europar/CanonMSV18}: scheduling tasks on a highly-parallel architecture without taking into
+account communications explicitly is just nonsense. The set of tasks is in fact a graph (more precisely a DAG,
+and even sometimes a tree [scheduling has manufacturing roots]). This is the point of view of the parallel
+computing community (see for example [SS05]), which is just a bit older than the real-time community: the one
+emerged at the beginning of the sixties, the other at the end of the sixties, and during their first 40 years they
+grew up with relatively few interactions. The second claim of this paper is that, even on our weakly-parallel
+architectures (2 cores today, 4 cores tomorrow for critical systems; the many-core is another subject), taking
+communications explicitly into account is essential to obtain realistic (not too optimistic) multi-core schedules.
+
+
+
+bla.
+
+
+
+bla.
+
+
+
+bla.
+
+
+
+desavantage de l'approche : on ne peut pas tricher et simplifier le probleme. Dommage !!!
+
+
+
+\section{The Scade models}
+
+bla.
+
+% \begin{figure}[h]
+% \includegraphics[width=1\textwidth]{scade_core_Ntasks}
+% \caption{Fully dependent parallel tasks}
+% \end{figure}
+
+bla.
+
+% \begin{figure}[h]
+% \includegraphics[width=1\textwidth]{scade_Mcores_Ntasks}
+% \caption{Fully dependent parallel tasks}
+% \end{figure}
+
+bla.
+
+
+
+bla.
+
+\section{Some results}
+
+bla.
+
+   1.5
+
+
+\begin{tabular}{|c|c|}
+\hline
+MathSat 5.6.0  & 1.5s \\
+\hline
+Z3 4.8.4 & 4.3s \\
+\hline
+CVC4 1.6 & 15s \\
+\hline
+Yices 2.6.0 & 13mn \\
+\hline
+DV 6.6 & 45mn \\
+\hline
+\end{tabular}
+
+Scade Prover is not yet able to generate the scheduling configuration,
+we ignore if the problem is the CSP internally generated of the solver itself.
+
+\section{Conclusions and Future Work}
+
+
+
+
+bla.
+
+
+shannon as a phase transition
+
+*********
+
+Pragmatic Information Rates, Generalizations of the
+Kelly Criterion, and Financial Market Efficiency
+Edward D Weinberger, Ph.D
+
+https://arxiv.org/ftp/arxiv/papers/0903/0903.2243.pdf
+
+In physics, phase transitions (sudden, qualitative changes in a physical system with small
+changes in temperature, pressure, or other state variable) are characterized by a
+discontinuity in the physical entropy of the system or its derivative with respect to that
+state variable (Thompson, 1979). The Noisy Coding Theorem is effectively the statement
+that the mutual information has a discontinuous derivative with respect to the input 
+Pragmatic Information Rates, Generalizations of the Kelly Criterion, and … 20
+entropy rate at the channel capacity. Since the input entropy rate to a communications
+channel is the analogue of the physical entropy, the Noisy Coding Theorem is therefore
+also the statement that there is a phase transition of the mutual information of the
+channel. In fact, papers such as (Kabashima and Saad, 1999) study a class of error
+correcting codes using the detailed formalism developed to describe physical phase
+transitions.
+
+Kabashima, A. and Saad, D. (1999). “Statistical mechanics of error correcting codes,”
+Europhysics Letters, 45, No. 4, 97-103.
+
+
+*******
+
+
+youtube.com
+
+Networks are everywhere with Albert-László Barabási
+
+Introduction to Complexity: Scale-Free and Long-Tailed Degree Distributions Part 1
+
+Remco van der Hofstad - The Structure of Complex Networks: Scale-Free and Small-World Random Graphs   40ième mn , 52eme : no phase transition
+
+https://www.networkpages.nl/scale-free-networks-a-controversial-topic-properly-solved-by-extreme-mathematics/
+réponse à "power-law is rare"
+
+%%
+%% Bibliography
+%%
+
+%% Please use bibtex, 
+
+\bibliography{lectures}
+
+\end{document}
