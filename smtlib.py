@@ -1,4 +1,5 @@
 from collections import OrderedDict, ChainMap
+from math import frexp, log10, floor
 class smtlib:
 	"""
 	set-logic : logic
@@ -189,15 +190,27 @@ class smtlib:
 			s = t
 		elif isinstance(t, bool):
 			s = 'true' if t else 'false'
-		elif isinstance(t, (int,float)):
+		elif isinstance(t, int):
 			if t >= 0:
-				s = str(t)
+				s = '{}'.format(t)
 			else:                        ### pour mathsat et yices
 				s = '(- {})'.format(-t)
+		elif isinstance(t, float):
+			tabs = t if t >= 0 else -t
+			l10 = log10(tabs) if tabs else 17
+			if l10 >= 17:
+				precision = 1
+			else:
+				precision = 18-floor(l10)
+			precision = '{:.' + str(precision) + 'f}'
+			if t >= 0:
+				s = precision.format(tabs)
+			else:
+				s = ('(- '+precision+')').format(tabs) 
 		elif isinstance(t, (list,tuple)):
 			s = '(' + ' '.join(smtlib.term2str(t1) for t1 in t) + ')'
 		else:
-			assert False
+			assert False, t
 		return s
 	
 	def z3(self, t):
@@ -258,7 +271,7 @@ class smtlib:
 	def ae_expr(t):
 		""
 		r = None
-		if isinstance(t, int): ## cas bool a faire
+		if isinstance(t, (int,float)): ## cas bool a faire ; verifier que float est OK
 			r = str(t)
 		elif isinstance(t, str):
 			if t[0].isdigit():
@@ -325,7 +338,7 @@ class smtlib:
 				for c in cl[1:]:
 					r = "bool'and("+r+','+c+')'
 			elif op in ('*','/','+','div','mod'):
-				assert len(t) == 3, op
+				assert len(t) == 3 or op=='+', op ### TBC
 				rl = [smtlib.ae_expr(e) for e in t[1:]]
 				if op == 'div': op = '/'
 				elif op == 'mod': op = '%'
@@ -335,7 +348,7 @@ class smtlib:
 				r = '{}({})'.format(smtlib.ae_id(op), ' , '.join(rl))
 			2+2
 		else:
-			assert False
+			assert False, t
 		return r
 	
 	solver_conf = {
