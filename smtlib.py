@@ -493,8 +493,9 @@ class smtlib:
 						s_ys = '(define {} :: (-> {}) (lambda ({}) {}))\n'.format(on, tl_s, pl_ys_s, t_ys_s)
 					else:
 						s_ys = '(define {} :: {} {})\n'.format(on, sort, t_ys_s)
-					pl_ae_s = ' , '.join('{} : {}'.format(pn.lower(),smtlib.ae_id(ps)) for pn,ps in pl)
-					s_ae = 'function {} ({}) : {} = {}\n'.format(smtlib.ae_id(on), pl_ae_s, smtlib.ae_id(sort), smtlib.ae_expr(t))
+					if fd_ae:
+						pl_ae_s = ' , '.join('{} : {}'.format(pn.lower(),smtlib.ae_id(ps)) for pn,ps in pl)
+						s_ae = 'function {} ({}) : {} = {}\n'.format(smtlib.ae_id(on), pl_ae_s, smtlib.ae_id(sort), smtlib.ae_expr(t))
 					if fd: fd.write(s)
 					if fd_z3: fd_z3.write(s_z3)
 					if fd_ys: fd_ys.write(s_ys)
