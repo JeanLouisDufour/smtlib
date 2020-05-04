@@ -29,6 +29,7 @@ class smtlib:
 		self.get_l = []
 		self.option_d = {}
 		self.logic = logic
+		self.float_mantissa = None # 12 pour np.float16 (meme si ...)
 		self.predef_sort_l = ['Bool']
 		if 'I' in logic:
 			self.predef_sort_l.append('Int')
@@ -184,7 +185,44 @@ class smtlib:
 			'sys_out': self.sys_out,
 		}
 	
-	def term2str(t):
+	def float2rat(t, levels):
+		""
+		if t == 0.0:
+			p,q = 0,1
+		else:
+			t,sign = (t,1) if t >= 0 else (-t,-1)
+			tm,te = frexp(t)
+			assert 0.5 <= tm < 1.0
+			tmi = int(floor(tm*levels+0.5))
+			if te >= 0:
+				p = tmi*(1<<te)
+				q = levels
+			else:
+				p = tmi
+				q = levels*(1<<-te)
+			assert abs(1-t*q/p) <= 1/levels
+			if sign == -1: p = -p
+		return p,q
+		
+	def positiveFloat2str(self, t):
+		""
+		if self.float_mantissa is None:
+			tabs = t # if t >= 0 else -t
+			l10 = log10(tabs) if tabs else 17
+			if l10 >= 17:
+				precision = 1
+			else:
+				precision = 18-floor(l10)
+			precision = '{:.' + str(precision) + 'f}'
+			s = precision.format(tabs)
+		elif t == 0.0:
+			s = '0.0'
+		else:
+			p,q = smtlib.float2rat(t, self.float_mantissa)
+			s = '(/ {}.0 {}.0)'.format(p,q)
+		return s
+	
+	def term2str(self, t):
 		""
 		if isinstance(t,str):
 			s = t
@@ -196,19 +234,14 @@ class smtlib:
 			else:                        ### pour mathsat et yices
 				s = '(- {})'.format(-t)
 		elif isinstance(t, float):
-			tabs = t if t >= 0 else -t
-			l10 = log10(tabs) if tabs else 17
-			if l10 >= 17:
-				precision = 1
+			if t == 0.0:
+				s = '0.0'
+			elif t >= 0:
+				s = self.positiveFloat2str(t)
 			else:
-				precision = 18-floor(l10)
-			precision = '{:.' + str(precision) + 'f}'
-			if t >= 0:
-				s = precision.format(tabs)
-			else:
-				s = ('(- '+precision+')').format(tabs) 
+				s = '(- {})'.format(self.positiveFloat2str(-t))
 		elif isinstance(t, (list,tuple)):
-			s = '(' + ' '.join(smtlib.term2str(t1) for t1 in t) + ')'
+			s = '(' + ' '.join(self.term2str(t1) for t1 in t) + ')'
 		else:
 			assert False, t
 		return s
@@ -479,14 +512,14 @@ class smtlib:
 			else:
 				pl, sort, t = ov
 				if t != None:
-					pl_s = smtlib.term2str(pl)
-					t_s = smtlib.term2str(t)
+					pl_s = self.term2str(pl)
+					t_s = self.term2str(t)
 					s = '(define-fun {} {} {} {})\n'.format(on,pl_s,sort,t_s)
 					t_z3 = self.z3(t)
-					t_z3_s = smtlib.term2str(t_z3)
+					t_z3_s = self.term2str(t_z3)
 					s_z3 = '(define-fun {} {} {} {})\n'.format(on,pl_s,sort,t_z3_s)
 					t_ys = self.ys(t)
-					t_ys_s = smtlib.term2str(t_ys)
+					t_ys_s = self.term2str(t_ys)
 					if pl:
 						tl_s = ' '.join([t for _,t in pl]+[sort])
 						pl_ys_s = ' '.join('{} :: {}'.format(pn,ps) for pn,ps in pl)
@@ -502,12 +535,12 @@ class smtlib:
 					if fd_ae: fd_ae.write(s_ae)
 				else:
 					assert False
-					sl_s = smtlib.term2str(pl)
+					sl_s = self.term2str(pl)
 					s_z3 = s = '(declare-fun {} {} {})\n'.format(on,sl_s,sort)
 					if fd: fd.write(s)
 					if fd_z3: fd_z3.write(s_z3)
 		for a in self.assert_l:
-			s_ys = s_z3 = s = '(assert {})\n'.format(smtlib.term2str(a))
+			s_ys = s_z3 = s = '(assert {})\n'.format(self.term2str(a))
 			if fd: fd.write(s)
 			if fd_z3: fd_z3.write(s_z3)
 			if fd_ys: fd_ys.write(s_ys)
