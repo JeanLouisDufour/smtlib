@@ -1,5 +1,5 @@
 from collections import OrderedDict, ChainMap
-from math import frexp, log10, floor
+from math import floor, frexp, gcd, log10
 class smtlib:
 	"""
 	set-logic : logic
@@ -185,10 +185,10 @@ class smtlib:
 			'sys_out': self.sys_out,
 		}
 	
-	def float2rat(t, levels):
+	def float2rat(t, levels, max_denom = None):
 		""
 		if t == 0.0:
-			p,q = 0,1
+			p, q, sign = 0,1,1
 		else:
 			t,sign = (t,1) if t >= 0 else (-t,-1)
 			tm,te = frexp(t)
@@ -200,8 +200,11 @@ class smtlib:
 			else:
 				p = tmi
 				q = levels*(1<<-te)
-			assert abs(1-t*q/p) <= 1/levels
+			pgcd = gcd(p,q)
+			p,q = p//pgcd, q//pgcd
+			if max_denom and q > max_denom[0]: max_denom[0] = q
 			if sign == -1: p = -p
+		assert abs(1-sign*t*q/p) <= 1/levels
 		return p,q
 		
 	def positiveFloat2str(self, t):
