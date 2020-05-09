@@ -37,6 +37,8 @@ class smtlib:
 			self.predef_sort_l.append('Real')
 		if 'I' in logic and 'R' in logic:
 			2+2 ## to_int, to_real, is_int
+		if 'BV' in logic:
+			self.predef_sort_l.extend(('_','BitVec',i) for i in range(1,65)) # (_ BitVec i)
 		self.sort_od = OrderedDict((s,0) for s in self.predef_sort_l)
 
 	############
@@ -98,10 +100,10 @@ class smtlib:
 	
 	def defineFun(self, symb, sortedVar_l, sort, term):
 		assert symb not in self.obj_od, symb
-		assert sort in self.sort_od
+		assert sort in self.sort_od, sort
 		for xn,xt in sortedVar_l:
 			assert xt in self.sort_od, xt
-		assert self.isTerm(term)
+		assert self.isTerm(term), term
 		self.obj_od[symb] = (sortedVar_l, sort, term)
 
 	def defineSort(self, symb, typevars, sort_expr):
@@ -142,6 +144,17 @@ class smtlib:
 		self.defineFun('max{}'.format(n), pars, t, expr)
 	
 	###############################
+	
+	def BVsz(self,s):
+		""
+		sort_in = self.obj_od[s]
+		assert len(sort_in) == 3
+		if sort_in[1] != 'BitVec':
+			sort_in = sort_in[1]
+			assert len(sort_in) == 3 and sort_in[1] == 'BitVec'
+		bits_in = sort_in[2]
+		assert 1 <= bits_in
+		return bits_in
 
 	def isSort(self, symb):
 		""
@@ -514,21 +527,28 @@ class smtlib:
 				if fd_ae: fd_ae.write('logic {} : {}\n'.format(smtlib.ae_id(on),smtlib.ae_id(ov)))
 			else:
 				pl, sort, t = ov
-				if t != None:
+				if pl == '_' and sort == 'BitVec' and isinstance(t,int):
+					s_z3 = s = '(declare-const {} (_ BitVec {}))\n'.format(on,t)
+					if fd: fd.write(s)
+					if fd_z3: fd_z3.write(s_z3)
+					if fd_ys: fd_ys.write('(define {} :: {})\n'.format(on,ov))
+					if fd_ae: fd_ae.write('logic {} : {}\n'.format(smtlib.ae_id(on),smtlib.ae_id(ov)))
+				elif t != None:
 					pl_s = self.term2str(pl)
 					t_s = self.term2str(t)
-					s = '(define-fun {} {} {} {})\n'.format(on,pl_s,sort,t_s)
+					sort_s = self.term2str(sort)
+					s = '(define-fun {} {} {} {})\n'.format(on,pl_s,sort_s,t_s)
 					t_z3 = self.z3(t)
 					t_z3_s = self.term2str(t_z3)
-					s_z3 = '(define-fun {} {} {} {})\n'.format(on,pl_s,sort,t_z3_s)
+					s_z3 = '(define-fun {} {} {} {})\n'.format(on,pl_s,sort_s,t_z3_s)
 					t_ys = self.ys(t)
 					t_ys_s = self.term2str(t_ys)
 					if pl:
-						tl_s = ' '.join([t for _,t in pl]+[sort])
-						pl_ys_s = ' '.join('{} :: {}'.format(pn,ps) for pn,ps in pl)
+						tl_s = ' '.join([self.term2str(t) for _,t in pl]+[sort_s])
+						pl_ys_s = ' '.join('{} :: {}'.format(pn,self.term2str(ps)) for pn,ps in pl)
 						s_ys = '(define {} :: (-> {}) (lambda ({}) {}))\n'.format(on, tl_s, pl_ys_s, t_ys_s)
 					else:
-						s_ys = '(define {} :: {} {})\n'.format(on, sort, t_ys_s)
+						s_ys = '(define {} :: {} {})\n'.format(on, sort_s, t_ys_s)
 					if fd_ae:
 						pl_ae_s = ' , '.join('{} : {}'.format(pn.lower(),smtlib.ae_id(ps)) for pn,ps in pl)
 						s_ae = 'function {} ({}) : {} = {}\n'.format(smtlib.ae_id(on), pl_ae_s, smtlib.ae_id(sort), smtlib.ae_expr(t))
