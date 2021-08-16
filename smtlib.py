@@ -1,5 +1,66 @@
 from collections import OrderedDict, ChainMap
 from math import floor, frexp, gcd, log10
+import sys
+
+def depth(t):
+	""
+	if isinstance(t,(list,tuple)):
+		d = max(depth(ti) for ti in t)+1 if len(t) else 0
+	else:
+		d = 0
+	return d
+
+G_explore = {}
+G_cnt = 0
+def explore(t, depth=0):
+	""
+	global G_cnt
+	G_cnt += 1
+	if G_cnt % 10 == 0:
+		print("cnt = "+str(G_cnt))
+	if depth % 10 == 0:
+		print("depth, cnt = "+str((depth,G_cnt)))
+	if isinstance(t,(list,tuple)):
+		i = id(t)
+		assert i not in G_explore, (depth, G_explore[i])
+		G_explore[i] = depth
+		for ti in t:
+			explore(ti,depth+1)
+	else:
+		assert isinstance(t,(int,bool,str)), t
+
+def G_term2sl(t):
+	""
+	if isinstance(t,str):
+		s = [t]
+	elif isinstance(t, bool):
+		s = ['true' if t else 'false']
+	elif isinstance(t, int):
+		if t >= 0:
+			s = ['{}'.format(t)]
+		else:                        ### pour mathsat et yices
+			s = ['(- {})'.format(-t)]
+	elif isinstance(t, float):
+		if t == 0.0:
+			s = ['0.0']
+		elif t >= 0:
+			s = [str(t)]
+		else:
+			s = ['(- {})'.format(str(-t))]
+	elif isinstance(t, (list,tuple)):
+		if len(t)==0:
+			s = ['()']
+		else:
+			s = []
+			for t1 in t:
+				s.extend(G_term2sl(t1))
+			s[0] = '('+s[0]
+			s[-1] = s[-1]+')' 
+		#s = '(' + ' '.join(G_term2str(t1) for t1 in t) + ')'
+	else:
+		assert False, t
+	return s
+
 class smtlib:
 	"""
 	set-logic : logic
@@ -240,6 +301,12 @@ class smtlib:
 	
 	def term2str(self, t):
 		""
+#		sl = G_term2sl(t)
+#		if len(sl) < 100:
+#			s = ' '.join(sl)
+#		else:
+#			s = '(too big)'
+#		return s
 		if isinstance(t,str):
 			s = t
 		elif isinstance(t, bool):
@@ -266,7 +333,7 @@ class smtlib:
 		""
 		ret = t
 		if isinstance(t, (list,tuple)):
-			if t[0] == 'match':
+			if len(t) and t[0] == 'match':
 				_, x, [[pat,y]] = t
 				constr = pat[0]
 				assert constr[0] == constr[-1] == '_', t
@@ -286,7 +353,7 @@ class smtlib:
 		""
 		ret = t
 		if isinstance(t, (list,tuple)):
-			if t[0] == 'match':
+			if len(t) and t[0] == 'match':
 				_, x, [[pat,y]] = t
 				constr = pat[0]
 				assert constr[0] == constr[-1] == '_', t
@@ -535,6 +602,11 @@ class smtlib:
 					if fd_ae: fd_ae.write('logic {} : {}\n'.format(smtlib.ae_id(on),smtlib.ae_id(ov)))
 				elif t != None:
 					pl_s = self.term2str(pl)
+#					rec_lim = sys.getrecursionlimit()
+#					sys.setrecursionlimit(10**6)
+#					explore(t)
+#					de = depth(t)
+#					print(de)
 					t_s = self.term2str(t)
 					sort_s = self.term2str(sort)
 					s = '(define-fun {} {} {} {})\n'.format(on,pl_s,sort_s,t_s)
